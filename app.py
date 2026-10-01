@@ -57,6 +57,8 @@ if 'cost_db' not in st.session_state:
         {"主工項": "假設與雜項工程", "細項名稱": "施工臨時便道 (山區土方開挖與夯實)", "單位": "m", "單價(元)": 1500, "備註": "依便道長度計價"},
         {"主工項": "假設與雜項工程", "細項名稱": "土方合法外運棄置 (B1/B2)", "單位": "m³", "單價(元)": 850, "備註": "含棄土證明"}
     ])
+    # 確保單價為整數型態
+    st.session_state['cost_db']['單價(元)'] = st.session_state['cost_db']['單價(元)'].astype(int)
 
 if 'history' not in st.session_state:
     st.session_state['history'] = []
@@ -81,7 +83,6 @@ if tab == "📊 階層式經費初估":
         st.subheader("1. 專案名稱與主工程選擇")
         project_name = st.text_input("專案名稱", "某坡地穩定與防落石水保工程")
         
-        # 取得所有不重複的主工項
         all_major_items = db['主工項'].unique().tolist()
         
         selected_majors = st.multiselect(
@@ -95,17 +96,16 @@ if tab == "📊 階層式經費初估":
         if selected_majors:
             st.markdown("---")
             st.markdown("#### 📝 細項與規格數量設定")
-            st.caption("請於下方需要的細部規格填寫數量。若該規格不需施作，維持數量為 `0` 即可。單價也可自行微調。")
+            st.caption("請於下方需要的細部規格填寫數量。若該規格不需施作，維持數量為 `0` 即可。單價已預設帶入，可自行微調。")
             
             for major in selected_majors:
                 with st.expander(f"📂 {major}", expanded=True):
-                    # 抓取該主工項底下的所有細項
                     sub_items = db[db['主工項'] == major]
                     
                     for idx, row in sub_items.iterrows():
                         sub_name = row['細項名稱']
                         unit = row['單位']
-                        default_price = float(row['單價(元)'])
+                        default_price = int(row['單價(元)'])
                         
                         st.markdown(f"🔹 **{sub_name}** *(備註: {row['備註']})*")
                         c_qty, c_price, c_total = st.columns([1, 1, 1])
@@ -113,14 +113,15 @@ if tab == "📊 階層式經費初估":
                         with c_qty:
                             qty = st.number_input(f"數量 ({unit})", value=0.0, step=10.0, key=f"qty_{major}_{idx}")
                         with c_price:
-                            prc = st.number_input(f"單價 (元/{unit})", value=default_price, step=100.0, key=f"prc_{major}_{idx}")
+                            # 由於 Streamlit 的 number_input 預設浮點數格式會顯示小數，這裡我們強制轉為整數 (int)，並用 format="%d" 隱藏小數點
+                            prc = st.number_input(f"單價 (元/{unit})", value=default_price, step=100, format="%d", key=f"prc_{major}_{idx}")
                         with c_total:
-                            subtotal = qty * prc
-                            st.metric("小計", f"NT$ {subtotal:,.0f}")
+                            subtotal = int(qty * prc)
+                            # 使用 :M, 加上千位數逗號，且沒有小數點
+                            st.metric("小計", f"NT$ {subtotal:,}")
                         
                         st.divider()
                         
-                        # 只要數量大於0，就加入計算清單
                         if qty > 0:
                             selected_details.append({
                                 "主工項": major,
@@ -146,21 +147,26 @@ if tab == "📊 階層式經費初估":
             df_selected = pd.DataFrame(selected_details)
             direct_cost = df_selected['複價'].sum()
             
-            # 間接費用計算
-            misc_cost = direct_cost * (misc_pct / 100)
+            misc_cost = int(direct_cost * (misc_pct / 100))
             subtotal_1 = direct_cost + misc_cost
             
-            management_cost = subtotal_1 * (management_pct / 100)
+            management_cost = int(subtotal_1 * (management_pct / 100))
             subtotal_2 = subtotal_1 + management_cost
             
-            tax_cost = subtotal_2 * (tax_pct / 100)
+            tax_cost = int(subtotal_2 * (tax_pct / 100))
             total_cost = subtotal_2 + tax_cost
             
-            st.metric(label="💰 總經費初估 (含稅)", value=f"NT$ {total_cost:,.0f} 元")
+            # 使用 :, 顯示千位數逗號，沒有小數點
+            st.metric(label="💰 總經費初估 (含稅)", value=f"NT$ {total_cost:,} 元")
             
             st.write("##### 一、直接工程費明細清單")
+            # 格式化 dataframe 顯示：單價與複價加上千位數逗號且無小數點
             st.dataframe(
-                df_selected[['主工項', '細項名稱', '數量', '單位', '單價', '複價']].style.format({"數量": "{:,.1f}", "單價": "{:,.0f}", "複價": "{:,.0f}"}), 
+                df_selected[['主工項', '細項名稱', '數量', '單位', '單價', '複價']].style.format({
+                    "數量": "{:,.1f}", 
+                    "單價": "{:,.0f}", 
+                    "複價": "{:,.0f}"
+                }), 
                 use_container_width=True, 
                 hide_index=True
             )
@@ -170,6 +176,7 @@ if tab == "📊 階層式經費初估":
                 "項目": ["一、直接工程費", f"二、雜項工程 ({misc_pct}%)", f"三、工程管理及利潤 ({management_pct}%)", f"四、營業稅 ({tax_pct}%)", "總計"],
                 "金額 (元)": [direct_cost, misc_cost, management_cost, tax_cost, total_cost]
             })
+            # 格式化摘要表顯示
             st.dataframe(summary_table.style.format({"金額 (元)": "{:,.0f}"}), use_container_width=True, hide_index=True)
             
             # 圖表分析
@@ -181,7 +188,7 @@ if tab == "📊 階層式經費初估":
                 x=alt.X('金額:Q', title='金額 (NT$)'),
                 y=alt.Y('費用類別:N', sort='-x', title='費用類別'),
                 color=alt.Color('費用類別:N', legend=None),
-                tooltip=['費用類別', alt.Tooltip('金額:Q', format=',.0f')]
+                tooltip=['費用類別', alt.Tooltip('金額:Q', format=',d')] # format=',d' 確保 tooltip 是千位數整數
             ).properties(height=250, title="經費組成結構圖")
             st.altair_chart(chart, use_container_width=True)
             
@@ -216,7 +223,8 @@ elif tab == "📚 單價資料庫管理":
     else:
         display_db = db
         
-    st.dataframe(display_db, use_container_width=True, hide_index=True)
+    # 格式化資料庫顯示，確保單價呈現千位數逗號且無小數
+    st.dataframe(display_db.style.format({"單價(元)": "{:,.0f}"}), use_container_width=True, hide_index=True)
     
     st.subheader("➕ 人工新增細項/新尺寸規格")
     with st.form("add_geotech_form"):
@@ -232,7 +240,8 @@ elif tab == "📚 單價資料庫管理":
             new_unit = st.text_input("單位 (例如：m, 座, m³)")
             
         with col2:
-            new_price = st.number_input("單價 (元)", min_value=0.0, value=1000.0, step=100.0)
+            # 新增時也強制以整數輸入
+            new_price = st.number_input("單價 (元)", min_value=0, value=1000, step=100, format="%d")
             new_note = st.text_input("備註說明")
             
         submitted = st.form_submit_button("確認新增至資料庫")
@@ -242,7 +251,7 @@ elif tab == "📚 單價資料庫管理":
                     "主工項": new_major,
                     "細項名稱": new_sub,
                     "單位": new_unit,
-                    "單價(元)": new_price,
+                    "單價(元)": int(new_price), # 確保存入為整數
                     "備註": new_note
                 }])
                 st.session_state['cost_db'] = pd.concat([db, new_row], ignore_index=True)
@@ -260,7 +269,9 @@ elif tab == "📁 歷史估算紀錄與匯出":
     history_df = pd.DataFrame(st.session_state['history'])
     
     if len(history_df) > 0:
-        st.dataframe(history_df, use_container_width=True, hide_index=True)
+        # 格式化歷史紀錄的金額顯示
+        format_dict = {col: "{:,.0f}" for col in history_df.columns if "費" in col or "稅" in col}
+        st.dataframe(history_df.style.format(format_dict), use_container_width=True, hide_index=True)
         
         csv = history_df.to_csv(index=False).encode('utf-8-sig')
         st.download_button(
