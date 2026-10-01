@@ -15,7 +15,7 @@ st.set_page_config(
 # ==========================================
 DB_FILE = 'shared_cost_db.csv'
 HISTORY_FILE = 'shared_history.csv'
-VERSION_KEY = 'db_version_4' # 更改這個變數名稱可以強制重置資料庫
+VERSION_KEY = 'db_version_5' # 更改這個變數名稱可以強制重置資料庫
 
 # 初始專業預設資料庫 (全尺寸、全細項補齊 + 新增微型樁、加勁擋土牆等)
 DEFAULT_DB = [
@@ -164,7 +164,6 @@ DEFAULT_DB = [
 ]
 
 # ★ 資料庫強迫重置機制 ★
-# 檢查 session 中是否有我們這個版本的標記，如果沒有，就強迫將 DEFAULT_DB 覆寫回 CSV 實體檔案
 if 'db_version' not in st.session_state or st.session_state['db_version'] != VERSION_KEY:
     df = pd.DataFrame(DEFAULT_DB)
     df.to_csv(DB_FILE, index=False, encoding='utf-8-sig')
@@ -228,9 +227,8 @@ with st.sidebar:
     tab = st.radio("", ["📊 專案經費初估", "📚 共享單價資料庫管理", "📁 共享歷史估算紀錄"])
     st.markdown("---")
     
-    # 保留您精簡版的核心時機說明
     st.markdown("#### 🔄 強制同步最新資料庫")
-    st.caption("使用時機：若其他同事剛剛更新了單價或新增了估算紀錄，點擊此按鈕即可抓取伺服器上最新的資料。")
+    st.caption("使用時機：點擊此按鈕即可抓取伺服器上最新的資料。")
     if st.button("立即同步更新", use_container_width=True):
         st.session_state['cost_db'] = load_db()
         st.session_state['history'] = load_history()
@@ -445,7 +443,7 @@ elif tab == "📚 共享單價資料庫管理":
 # ==========================================
 elif tab == "📁 共享歷史估算紀錄":
     st.header("📁 共享歷史估算紀錄與匯出")
-    st.markdown("這裡是**團隊共用**的專案資料庫。點擊專案卡片可檢視所有人儲存的詳細工程與預算明細。")
+    st.markdown("點擊專案卡片可檢視所有人儲存的詳細工程與預算明細。")
     
     history_data = load_history()
     
@@ -506,7 +504,7 @@ elif tab == "📁 共享歷史估算紀錄":
         st.info("目前尚無團隊估算紀錄。")
 
 # ==========================================
-# 網頁下方資料來源備註 (Footer) - 完整保留
+# 網頁下方資料來源備註 (Footer)
 # ==========================================
 st.markdown("---")
 st.markdown(
