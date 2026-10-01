@@ -5,7 +5,7 @@ import os
 
 st.set_page_config(
     page_title="大地工程經費初估與單價資料庫",
-    page_icon="⛰️️",
+    page_icon="⛰️",
     layout="wide",
     initial_sidebar_state="expanded"
 )
@@ -15,6 +15,7 @@ st.set_page_config(
 # ==========================================
 DB_FILE = 'shared_cost_db.csv'
 HISTORY_FILE = 'shared_history.csv'
+VERSION_KEY = 'db_version_2' # 更改這個變數名稱可以強制重置資料庫
 
 # 初始專業預設資料庫 (全尺寸、全細項補齊)
 DEFAULT_DB = [
@@ -125,6 +126,13 @@ DEFAULT_DB = [
     {"主工項": "假設與雜項工程", "細項名稱": "土方合法外運棄置 (B1/B2)", "單位": "m³", "單價(元)": 850, "備註": "含棄土證明"}
 ]
 
+# ★ 資料庫強迫重置機制 ★
+# 檢查 session 中是否有我們這個版本的標記，如果沒有，就強迫將 DEFAULT_DB 覆寫回 CSV 實體檔案
+if 'db_version' not in st.session_state or st.session_state['db_version'] != VERSION_KEY:
+    df = pd.DataFrame(DEFAULT_DB)
+    df.to_csv(DB_FILE, index=False, encoding='utf-8-sig')
+    st.session_state['db_version'] = VERSION_KEY
+
 # 讀取共用資料庫
 def load_db():
     if os.path.exists(DB_FILE):
@@ -183,8 +191,9 @@ with st.sidebar:
     tab = st.radio("", ["📊 專案經費初估", "📚 共享單價資料庫管理", "📁 共享歷史估算紀錄"])
     st.markdown("---")
     
+    # 修正後的說明：只留核心時機說明
     st.markdown("#### 🔄 強制同步最新資料庫")
-    st.caption("點擊此按鈕即可抓取伺服器上最新的資料。")
+    st.caption("使用時機：若其他同事剛剛更新了單價或新增了估算紀錄，點擊此按鈕即可抓取伺服器上最新的資料。")
     if st.button("立即同步更新", use_container_width=True):
         st.session_state['cost_db'] = load_db()
         st.session_state['history'] = load_history()
@@ -194,7 +203,6 @@ with st.sidebar:
 # TAB 1: 專案經費初估
 # ==========================================
 if tab == "📊 專案經費初估":
-    # 確保使用最新資料庫
     db = load_db()
     
     st.subheader("1. 專案名稱與工程項目設定")
@@ -327,7 +335,7 @@ if tab == "📊 專案經費初估":
                 current_history.append(record)
                 save_history(current_history)
                 st.session_state['history'] = current_history
-                st.success("儲存成功！可於「共享歷史估算紀錄」查看此專案。")
+                st.success("儲存成功！所有同仁皆可於「共享歷史估算紀錄」查看此專案。")
     else:
         st.info("👈 請先於上方區塊勾選工項並填寫大於 0 的數量。")
 
