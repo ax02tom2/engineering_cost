@@ -2,7 +2,6 @@ import streamlit as st
 import pandas as pd
 import altair as alt
 
-# 設定網頁為寬版，並自訂整體的主題顏色
 st.set_page_config(
     page_title="大地工程經費初估與單價資料庫",
     page_icon="⛰️",
@@ -51,22 +50,28 @@ if 'cost_db' not in st.session_state:
 if 'history' not in st.session_state:
     st.session_state['history'] = []
 
-# 自訂 CSS，增加區塊留白，美化按鈕與字體大小，減少擁擠感
+# 自訂 CSS：強制數字與輸入框在同一水平線，統一字體大小，並美化總計卡片
 st.markdown("""
     <style>
         .block-container { padding-top: 2rem; padding-bottom: 2rem; }
         .stExpander { border-radius: 8px; border: 1px solid #e0e0e0; box-shadow: 0 2px 4px rgba(0,0,0,0.05); margin-bottom: 15px;}
-        .metric-card { background-color: #f8f9fa; padding: 20px; border-radius: 10px; border-left: 5px solid #0056b3; box-shadow: 0 4px 6px rgba(0,0,0,0.1); margin-bottom: 20px;}
-        h1, h2, h3 { color: #2c3e50; }
-        .price-text { font-size: 1.1rem; color: #4CAF50; font-weight: bold; }
-        hr { margin: 1.5em 0; border: 0; height: 1px; background: #eee; }
+        .metric-card { background-color: #f8f9fa; padding: 25px; border-radius: 10px; border-left: 6px solid #0056b3; box-shadow: 0 4px 10px rgba(0,0,0,0.1); margin-bottom: 20px;}
+        
+        /* 統一文字區塊的垂直高度，對齊輸入框 */
+        .align-text { 
+            margin-top: 28px; /* 這個高度是為了解決 Streamlit 輸入框標題所佔用的高度 */
+            font-size: 16px; 
+            line-height: 1.5;
+        }
+        .price-text { color: #4CAF50; font-weight: 700; font-size: 16px; }
+        .total-text { color: #333333; font-weight: 700; font-size: 16px; }
+        
+        hr { margin: 1em 0; border: 0; height: 1px; background: #eaedf0; }
     </style>
 """, unsafe_allow_html=True)
 
-
 st.title("⛰️ 大地工程經費初估與資料庫")
 
-# 側邊欄導覽
 with st.sidebar:
     st.header("功能導覽")
     tab = st.radio("", ["📊 專案經費初估", "📚 單價資料庫管理", "📁 歷史估算紀錄"])
@@ -74,125 +79,144 @@ with st.sidebar:
     st.info("💡 **單價更新說明**\n\nPCCES 單價無法自動即時抓取，請利用「資料庫管理」的 CSV 匯入功能進行整批單價更新。")
 
 # ==========================================
-# TAB 1: 專案經費初估 (回歸區塊展開式，版面重構)
+# TAB 1: 專案經費初估
 # ==========================================
 if tab == "📊 專案經費初估":
     
-    # 頂部：專案基本資料 (佔滿寬度)
-    st.subheader("1. 專案設定")
-    project_name = st.text_input("專案名稱", "某坡地穩定與水保改善工程", help="輸入專案名稱以便未來在歷史紀錄中查找")
+    # ---------------- 區塊一：專案設定與工項選擇 (滿寬度) ----------------
+    st.subheader("1. 專案名稱與工程項目設定")
+    project_name = st.text_input("專案名稱", "某坡地穩定與水保改善工程")
     
-    st.markdown("<br>", unsafe_allow_html=True) # 增加留白
+    db = st.session_state['cost_db']
+    all_major_items = db['主工項'].unique().tolist()
     
-    # 版面分割：左側 (佔 7 成) 負責挑選工項與設定；右側 (佔 3 成) 負責顯示結果
-    left_col, right_col = st.columns([7, 3], gap="large")
+    selected_majors = st.multiselect(
+        "請選擇本次工程涵蓋的主項目 (可複選)：", 
+        options=all_major_items,
+        placeholder="點擊此處展開清單..."
+    )
     
-    with left_col:
-        st.subheader("2. 工程項目選擇與數量設定")
-        db = st.session_state['cost_db']
-        all_major_items = db['主工項'].unique().tolist()
+    selected_details = []
+    
+    if selected_majors:
+        st.markdown("#### 📝 細項數量與單價設定")
+        st.caption("請填寫數量。參考價與小計皆已統一對齊，若需微調單價請修改「自訂單價」。")
         
-        selected_majors = st.multiselect(
-            "請選擇本次工程涵蓋的主項目 (可複選)：", 
-            options=all_major_items,
-            placeholder="點擊此處展開清單..."
-        )
-        
-        selected_details = []
-        
-        if selected_majors:
-            st.markdown("---")
-            # 展開區塊設計 (前一版的美觀卡片感)
-            for major in selected_majors:
-                with st.expander(f"📂 {major}", expanded=True):
-                    sub_items = db[db['主工項'] == major]
+        for major in selected_majors:
+            with st.expander(f"📂 {major}", expanded=True):
+                sub_items = db[db['主工項'] == major]
+                
+                for idx, row in sub_items.iterrows():
+                    sub_name = row['細項名稱']
+                    unit = row['單位']
+                    default_price = int(row['單價(元)'])
                     
-                    for idx, row in sub_items.iterrows():
-                        sub_name = row['細項名稱']
-                        unit = row['單位']
-                        default_price = int(row['單價(元)'])
+                    st.markdown(f"**{sub_name}** <span style='color:gray; font-size:13px;'>({row['備註']})</span>", unsafe_allow_html=True)
+                    
+                    # 4 格佈局：數量 | 參考價(文字) | 自訂單價(輸入) | 小計(文字)
+                    c_qty, c_ref, c_custom, c_total = st.columns([1, 1, 1, 1])
+                    
+                    with c_qty:
+                        qty = st.number_input(f"數量 ({unit})", value=0.0, step=10.0, key=f"qty_{major}_{idx}")
+                    
+                    with c_ref:
+                        # 加上 align-text 樣式，精準對齊旁邊的輸入框
+                        st.markdown(f"<div class='align-text'>參考價：<span class='price-text'>NT$ {default_price:,}</span></div>", unsafe_allow_html=True)
                         
-                        st.markdown(f"**{sub_name}** <span style='color:gray; font-size:12px;'>({row['備註']})</span>", unsafe_allow_html=True)
-                        
-                        # 4 格佈局：數量 | 系統單價 | 覆蓋單價 | 小計
-                        c_qty, c_ref, c_custom, c_total = st.columns([1.5, 1.5, 1.5, 1.5])
-                        
-                        with c_qty:
-                            qty = st.number_input(f"數量 ({unit})", value=0.0, step=10.0, key=f"qty_{major}_{idx}")
-                        
-                        with c_ref:
-                            st.markdown(f"<div style='margin-top: 30px; font-size: 14px;'>參考價: <br><span class='price-text'>NT$ {default_price:,}</span></div>", unsafe_allow_html=True)
+                    with c_custom:
+                        custom_val = st.text_input(f"自訂單價(可選)", value=str(default_price), key=f"prc_{major}_{idx}")
+                        try:
+                            prc = int(custom_val.replace(',', ''))
+                        except ValueError:
+                            prc = default_price
                             
-                        with c_custom:
-                            custom_val = st.text_input(f"修改單價(可選)", value=str(default_price), key=f"prc_{major}_{idx}")
-                            try:
-                                prc = int(custom_val.replace(',', ''))
-                            except ValueError:
-                                prc = default_price
-                                
-                        with c_total:
-                            subtotal = int(qty * prc)
-                            st.markdown(f"<div style='margin-top: 30px; font-size: 14px; text-align:right;'>小計: <br><b>NT$ {subtotal:,}</b></div>", unsafe_allow_html=True)
-                            
-                        st.markdown("<hr style='margin: 10px 0;'>", unsafe_allow_html=True)
+                    with c_total:
+                        subtotal = int(qty * prc)
+                        # 統一字體與對齊高度
+                        st.markdown(f"<div class='align-text'>小計：<span class='total-text'>NT$ {subtotal:,}</span></div>", unsafe_allow_html=True)
                         
-                        if qty > 0:
-                            selected_details.append({
-                                "主工項": major,
-                                "細項名稱": sub_name,
-                                "單位": unit,
-                                "數量": qty,
-                                "單價": prc,
-                                "複價": subtotal
-                            })
+                    st.markdown("<hr>", unsafe_allow_html=True)
+                    
+                    if qty > 0:
+                        selected_details.append({
+                            "主工項": major,
+                            "細項名稱": sub_name,
+                            "數量": qty,
+                            "單位": unit,
+                            "單價(元)": prc,
+                            "複價": subtotal
+                        })
 
-        st.markdown("<br>", unsafe_allow_html=True)
-        st.subheader("3. 間接費用費率 (%)")
-        col_m1, col_m2, col_m3 = st.columns(3)
-        with col_m1:
-            misc_pct = st.number_input("雜項工程費率", value=15.0, step=0.5)
-        with col_m2:
-            management_pct = st.number_input("管理及利潤率", value=10.0, step=0.5)
-        with col_m3:
-            tax_pct = st.number_input("營業稅率", value=5.0, step=0.5)
+    st.markdown("<br>", unsafe_allow_html=True)
+    st.subheader("2. 間接費用費率設定 (%)")
+    col_m1, col_m2, col_m3 = st.columns(3)
+    with col_m1:
+        misc_pct = st.number_input("雜項工程費率", value=15.0, step=0.5)
+    with col_m2:
+        management_pct = st.number_input("管理及利潤率", value=10.0, step=0.5)
+    with col_m3:
+        tax_pct = st.number_input("營業稅率", value=5.0, step=0.5)
 
-    with right_col:
-        # 右側永遠固定顯示計算結果
-        st.subheader("📊 估算結果分析")
+    st.markdown("---")
+    
+    # ---------------- 區塊二：估算結果分析 (移至最下方，滿寬度顯示) ----------------
+    st.subheader("📊 3. 估算結果分析與明細")
+    
+    if len(selected_details) > 0:
+        df_selected = pd.DataFrame(selected_details)
+        direct_cost = df_selected['複價'].sum()
         
-        if len(selected_details) > 0:
-            df_selected = pd.DataFrame(selected_details)
-            direct_cost = df_selected['複價'].sum()
+        misc_cost = int(direct_cost * (misc_pct / 100))
+        subtotal_1 = direct_cost + misc_cost
+        management_cost = int(subtotal_1 * (management_pct / 100))
+        subtotal_2 = subtotal_1 + management_cost
+        tax_cost = int(subtotal_2 * (tax_pct / 100))
+        total_cost = subtotal_2 + tax_cost
+        
+        # 總經費大卡片
+        st.markdown(f"""
+        <div class="metric-card">
+            <p style="margin:0; color:#555; font-size:16px;">總經費初估 (含稅)</p>
+            <h1 style="margin:0; color:#0056b3; font-size:36px; padding-top:5px;">NT$ {total_cost:,}</h1>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        # 下半部分成兩欄：左邊放所有明細，右邊放結構圖表
+        res_col1, res_col2 = st.columns([1.5, 1])
+        
+        with res_col1:
+            st.write("##### 📝 直接工程費完整明細")
+            # 格式化資料表，隱藏 Index
+            st.dataframe(
+                df_selected.style.format({
+                    "數量": "{:,.1f}", 
+                    "單價(元)": "{:,.0f}", 
+                    "複價": "{:,.0f}"
+                }), 
+                use_container_width=True, 
+                hide_index=True
+            )
             
-            misc_cost = int(direct_cost * (misc_pct / 100))
-            subtotal_1 = direct_cost + misc_cost
-            management_cost = int(subtotal_1 * (management_pct / 100))
-            subtotal_2 = subtotal_1 + management_cost
-            tax_cost = int(subtotal_2 * (tax_pct / 100))
-            total_cost = subtotal_2 + tax_cost
-            
-            # 使用醒目的設計卡片顯示總價
-            st.markdown(f"""
-            <div class="metric-card">
-                <p style="margin:0; color:#555; font-size:14px;">總經費初估 (含稅)</p>
-                <h2 style="margin:0; color:#0056b3; font-size:28px;">NT$ {total_cost:,}</h2>
-            </div>
-            """, unsafe_allow_html=True)
-            
-            # 結構摘要表
+            st.write("##### 📊 經費結構摘要")
             summary_table = pd.DataFrame({
-                "項目": ["直接工程", "雜項工程", "管理及利潤", "營業稅"],
+                "費用項目": ["一、直接工程費", f"二、雜項工程 ({misc_pct}%)", f"三、工程管理及利潤 ({management_pct}%)", f"四、營業稅 ({tax_pct}%)", "總計"],
+                "金額 (NT$)": [direct_cost, misc_cost, management_cost, tax_cost, total_cost]
+            })
+            st.dataframe(summary_table.style.format({"金額 (NT$)": "{:,.0f}"}), use_container_width=True, hide_index=True)
+            
+        with res_col2:
+            st.write("##### 📈 經費佔比視覺化")
+            chart_data = pd.DataFrame({
+                "費用類別": ["直接工程", "雜項工程", "管理及利潤", "營業稅"],
                 "金額": [direct_cost, misc_cost, management_cost, tax_cost]
             })
-            st.dataframe(summary_table.style.format({"金額": "{:,.0f}"}), use_container_width=True, hide_index=True)
-            
-            # 圖表
-            chart = alt.Chart(summary_table).mark_bar(cornerRadiusEnd=4).encode(
+            chart = alt.Chart(chart_data).mark_bar(cornerRadiusEnd=4).encode(
                 x=alt.X('金額:Q', title='金額 (NT$)', axis=alt.Axis(format='d')),
-                y=alt.Y('項目:N', sort='-x', title=''),
-                color=alt.Color('項目:N', legend=None),
-                tooltip=['項目', alt.Tooltip('金額:Q', format=',d')]
-            ).properties(height=200).configure_view(strokeWidth=0)
+                y=alt.Y('費用類別:N', sort='-x', title=''),
+                color=alt.Color('費用類別:N', legend=None),
+                tooltip=['費用類別', alt.Tooltip('金額:Q', format=',d')]
+            ).properties(height=350).configure_view(strokeWidth=0)
+            
             st.altair_chart(chart, use_container_width=True)
             
             st.markdown("<br>", unsafe_allow_html=True)
@@ -207,12 +231,12 @@ if tab == "📊 專案經費初估":
                     "時間": pd.Timestamp.now().strftime("%Y-%m-%d %H:%M")
                 }
                 st.session_state['history'].append(record)
-                st.success("儲存成功！")
-        else:
-            st.info("👈 請於左側選擇工項並填寫數量。")
+                st.success("儲存成功！請至「歷史估算紀錄」查看。")
+    else:
+        st.info("👈 請先於上方區塊勾選工項並填寫大於 0 的數量，系統將於此處生成完整明細與分析圖表。")
 
 # ==========================================
-# TAB 2: 單價資料庫管理 (PCCES 批次更新)
+# TAB 2: 單價資料庫管理
 # ==========================================
 elif tab == "📚 單價資料庫管理":
     st.header("📚 單價資料庫與 PCCES 批次更新")
@@ -222,13 +246,13 @@ elif tab == "📚 單價資料庫管理":
     c_dl, c_up = st.columns([1, 1], gap="large")
     with c_dl:
         st.markdown("#### ⬇️ 步驟 1: 下載目前資料庫")
-        st.caption("將現有資料庫匯出為 CSV，交由估算人員比對最新 PCCES 行情並修改單價。")
+        st.caption("匯出 CSV，交由估算人員比對最新 PCCES 行情並修改單價。")
         csv_db = db.to_csv(index=False).encode('utf-8-sig')
         st.download_button("📥 下載 CSV 模板", data=csv_db, file_name="geotech_database.csv", mime="text/csv")
     
     with c_up:
         st.markdown("#### ⬆️ 步驟 2: 匯入最新單價表")
-        st.caption("上傳修改完成的 CSV，系統將自動覆蓋並更新所有單價。")
+        st.caption("上傳修改完成的 CSV，系統將自動覆蓋更新單價。")
         uploaded_file = st.file_uploader("上傳更新後的 CSV 檔案", type=["csv"], label_visibility="collapsed")
         if uploaded_file is not None:
             try:
@@ -288,6 +312,3 @@ elif tab == "📁 歷史估算紀錄":
             st.rerun()
     else:
         st.info("目前尚無歷史估算紀錄。")
-
-st.markdown("---")
-st.markdown("<div style='text-align: center; color: gray; font-size: 12px;'>本系統單價邏輯參考行政院公共工程委員會 (PCCES) 規則編製。正式經費應依設計圖說與預算書為準。</div>", unsafe_allow_html=True)
