@@ -193,7 +193,7 @@ with st.sidebar:
     
     # 修正後的說明：只留核心時機說明
     st.markdown("#### 🔄 強制同步最新資料庫")
-    st.caption("使用時機：若其他同事剛剛更新了單價或新增了估算紀錄，點擊此按鈕即可抓取伺服器上最新的資料。")
+    st.caption("點擊此按鈕即可抓取伺服器上最新的資料。")
     if st.button("立即同步更新", use_container_width=True):
         st.session_state['cost_db'] = load_db()
         st.session_state['history'] = load_history()
@@ -356,7 +356,7 @@ elif tab == "📚 共享單價資料庫管理":
     
     with c_up:
         st.markdown("#### ⬆️ 步驟 2: 匯入最新單價表")
-        st.caption("上傳後，所有同仁的選單將立即更新為最新單價。")
+        st.caption("上傳後，選單將立即更新為最新單價。")
         uploaded_file = st.file_uploader("上傳更新後的 CSV 檔案", type=["csv"], label_visibility="collapsed")
         if uploaded_file is not None:
             try:
@@ -398,7 +398,7 @@ elif tab == "📚 共享單價資料庫管理":
                         updated_db = pd.concat([current_db, new_row], ignore_index=True)
                         save_db(updated_db)
                         st.session_state['cost_db'] = updated_db
-                        st.success("新增成功！其他同仁重新整理網頁即可看到。")
+                        st.success("新增成功！重新整理網頁即可看到。")
                         st.rerun()
                 except ValueError:
                     st.error("單價請輸入有效數字！")
@@ -408,7 +408,7 @@ elif tab == "📚 共享單價資料庫管理":
 # ==========================================
 elif tab == "📁 共享歷史估算紀錄":
     st.header("📁 共享歷史估算紀錄與匯出")
-    st.markdown("這裡是**團隊共用**的專案資料庫。點擊專案卡片可檢視所有人儲存的詳細工程與預算明細。")
+    st.markdown("這裡是共用的專案資料庫。點擊專案卡片可檢視所有人儲存的詳細工程與預算明細。")
     
     history_data = load_history()
     
