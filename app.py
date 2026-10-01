@@ -96,7 +96,7 @@ if tab == "📊 階層式經費初估":
         if selected_majors:
             st.markdown("---")
             st.markdown("#### 📝 細項與規格數量設定")
-            st.caption("請於下方需要的細部規格填寫數量。若該規格不需施作，維持數量為 `0` 即可。單價已預設帶入，可自行微調。")
+            st.caption("請於下方需要的細部規格填寫數量。若該規格不需施作，維持數量為 `0` 即可。系統預設帶入公開單價，您也可在右側輸入框自行覆蓋。")
             
             for major in selected_majors:
                 with st.expander(f"📂 {major}", expanded=True):
@@ -108,16 +108,27 @@ if tab == "📊 階層式經費初估":
                         default_price = int(row['單價(元)'])
                         
                         st.markdown(f"🔹 **{sub_name}** *(備註: {row['備註']})*")
-                        c_qty, c_price, c_total = st.columns([1, 1, 1])
+                        # 調整欄位配置：數量 | 預設單價顯示 | 自訂單價輸入 | 小計
+                        c_qty, c_default_price, c_custom_price, c_total = st.columns([1, 1, 1, 1])
                         
                         with c_qty:
                             qty = st.number_input(f"數量 ({unit})", value=0.0, step=10.0, key=f"qty_{major}_{idx}")
-                        with c_price:
-                            # 由於 Streamlit 的 number_input 預設浮點數格式會顯示小數，這裡我們強制轉為整數 (int)，並用 format="%d" 隱藏小數點
-                            prc = st.number_input(f"單價 (元/{unit})", value=default_price, step=100, format="%d", key=f"prc_{major}_{idx}")
+                        with c_default_price:
+                            # 使用 markdown 直接顯示帶千分位的文字，解決 number_input 格式限制
+                            st.markdown(f"<div style='margin-top: 30px; font-size: 16px;'>參考單價: <br><b>NT$ {default_price:,}</b></div>", unsafe_allow_html=True)
+                        with c_custom_price:
+                            # 讓使用者可以自行輸入欲覆蓋的價格，預設帶入 default_price。
+                            # 雖然這裡輸入時可能沒有逗號，但它是選填的修改欄位
+                            custom_price_input = st.text_input(f"自訂單價 (元/{unit})", value=str(default_price), key=f"prc_{major}_{idx}")
+                            
+                            try:
+                                # 嘗試將自訂輸入轉為數字，若失敗則用預設值
+                                prc = int(custom_price_input.replace(',', ''))
+                            except ValueError:
+                                prc = default_price
+
                         with c_total:
                             subtotal = int(qty * prc)
-                            # 使用 :M, 加上千位數逗號，且沒有小數點
                             st.metric("小計", f"NT$ {subtotal:,}")
                         
                         st.divider()
@@ -156,11 +167,9 @@ if tab == "📊 階層式經費初估":
             tax_cost = int(subtotal_2 * (tax_pct / 100))
             total_cost = subtotal_2 + tax_cost
             
-            # 使用 :, 顯示千位數逗號，沒有小數點
             st.metric(label="💰 總經費初估 (含稅)", value=f"NT$ {total_cost:,} 元")
             
             st.write("##### 一、直接工程費明細清單")
-            # 格式化 dataframe 顯示：單價與複價加上千位數逗號且無小數點
             st.dataframe(
                 df_selected[['主工項', '細項名稱', '數量', '單位', '單價', '複價']].style.format({
                     "數量": "{:,.1f}", 
@@ -176,7 +185,6 @@ if tab == "📊 階層式經費初估":
                 "項目": ["一、直接工程費", f"二、雜項工程 ({misc_pct}%)", f"三、工程管理及利潤 ({management_pct}%)", f"四、營業稅 ({tax_pct}%)", "總計"],
                 "金額 (元)": [direct_cost, misc_cost, management_cost, tax_cost, total_cost]
             })
-            # 格式化摘要表顯示
             st.dataframe(summary_table.style.format({"金額 (元)": "{:,.0f}"}), use_container_width=True, hide_index=True)
             
             # 圖表分析
@@ -188,7 +196,7 @@ if tab == "📊 階層式經費初估":
                 x=alt.X('金額:Q', title='金額 (NT$)'),
                 y=alt.Y('費用類別:N', sort='-x', title='費用類別'),
                 color=alt.Color('費用類別:N', legend=None),
-                tooltip=['費用類別', alt.Tooltip('金額:Q', format=',d')] # format=',d' 確保 tooltip 是千位數整數
+                tooltip=['費用類別', alt.Tooltip('金額:Q', format=',d')]
             ).properties(height=250, title="經費組成結構圖")
             st.altair_chart(chart, use_container_width=True)
             
@@ -223,7 +231,6 @@ elif tab == "📚 單價資料庫管理":
     else:
         display_db = db
         
-    # 格式化資料庫顯示，確保單價呈現千位數逗號且無小數
     st.dataframe(display_db.style.format({"單價(元)": "{:,.0f}"}), use_container_width=True, hide_index=True)
     
     st.subheader("➕ 人工新增細項/新尺寸規格")
@@ -240,25 +247,29 @@ elif tab == "📚 單價資料庫管理":
             new_unit = st.text_input("單位 (例如：m, 座, m³)")
             
         with col2:
-            # 新增時也強制以整數輸入
-            new_price = st.number_input("單價 (元)", min_value=0, value=1000, step=100, format="%d")
+            new_price = st.text_input("單價 (元)", value="1000")
             new_note = st.text_input("備註說明")
             
         submitted = st.form_submit_button("確認新增至資料庫")
         if submitted:
-            if new_major and new_sub:
-                new_row = pd.DataFrame([{
-                    "主工項": new_major,
-                    "細項名稱": new_sub,
-                    "單位": new_unit,
-                    "單價(元)": int(new_price), # 確保存入為整數
-                    "備註": new_note
-                }])
-                st.session_state['cost_db'] = pd.concat([db, new_row], ignore_index=True)
-                st.success(f"成功新增規格：【{new_major}】 ➔ {new_sub}！")
-                st.rerun()
-            else:
-                st.error("主工項與細項名稱皆不可空白！")
+            try:
+                # 處理使用者可能輸入逗號的情況
+                parsed_price = int(new_price.replace(',', ''))
+                if new_major and new_sub:
+                    new_row = pd.DataFrame([{
+                        "主工項": new_major,
+                        "細項名稱": new_sub,
+                        "單位": new_unit,
+                        "單價(元)": parsed_price,
+                        "備註": new_note
+                    }])
+                    st.session_state['cost_db'] = pd.concat([db, new_row], ignore_index=True)
+                    st.success(f"成功新增規格：【{new_major}】 ➔ {new_sub}！")
+                    st.rerun()
+                else:
+                    st.error("主工項與細項名稱皆不可空白！")
+            except ValueError:
+                st.error("單價請輸入有效數字！")
 
 # ==========================================
 # TAB 3: 歷史估算紀錄與匯出
@@ -269,7 +280,6 @@ elif tab == "📁 歷史估算紀錄與匯出":
     history_df = pd.DataFrame(st.session_state['history'])
     
     if len(history_df) > 0:
-        # 格式化歷史紀錄的金額顯示
         format_dict = {col: "{:,.0f}" for col in history_df.columns if "費" in col or "稅" in col}
         st.dataframe(history_df.style.format(format_dict), use_container_width=True, hide_index=True)
         
