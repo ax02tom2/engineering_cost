@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import altair as alt
+import os
 
 st.set_page_config(
     page_title="大地工程經費初估與單價資料庫",
@@ -10,47 +11,101 @@ st.set_page_config(
 )
 
 # ==========================================
-# 初始化大地工程預設資料庫
+# 資料庫檔案路徑 (用於多人共享與永久儲存)
 # ==========================================
+DB_FILE = 'shared_cost_db.csv'
+HISTORY_FILE = 'shared_history.csv'
+
+# 初始專業預設資料庫 (全面補齊細項)
+DEFAULT_DB = [
+    # --- 【大口徑集水井 (深井工法)】 (全面擴充細項) ---
+    {"主工項": "大口徑集水井 (內徑 3.5m 深井)", "細項名稱": "井口護頂RC與導溝", "單位": "座", "單價(元)": 150000, "備註": "含開挖、配筋與澆置"},
+    {"主工項": "大口徑集水井 (內徑 3.5m 深井)", "細項名稱": "井筒土方人工/機具開挖", "單位": "m³", "單價(元)": 1800, "備註": "含局限空間吊搬運與抽水"},
+    {"主工項": "大口徑集水井 (內徑 3.5m 深井)", "細項名稱": "鋼襯鐵/RC波形鋼板環片組立", "單位": "m", "單價(元)": 85000, "備註": "依深度計價"},
+    {"主工項": "大口徑集水井 (內徑 3.5m 深井)", "細項名稱": "環片背填灌漿 (固結/止水)", "單位": "式", "單價(元)": 120000, "備註": "防止井外土砂流失"},
+    {"主工項": "大口徑集水井 (內徑 3.5m 深井)", "細項名稱": "輻射排水管-機具鑽孔", "單位": "m", "單價(元)": 1200, "備註": "水平鑽掘"},
+    {"主工項": "大口徑集水井 (內徑 3.5m 深井)", "細項名稱": "輻射排水管-PVC管及不織布包覆", "單位": "m", "單價(元)": 600, "備註": "含湧水引導處理"},
+    {"主工項": "大口徑集水井 (內徑 3.5m 深井)", "細項名稱": "井內不鏽鋼爬梯 (含防墜落設施)", "單位": "m", "單價(元)": 3500, "備註": "SUS304"},
+    {"主工項": "大口徑集水井 (內徑 3.5m 深井)", "細項名稱": "局限空間通風與照明設備", "單位": "月", "單價(元)": 45000, "備註": "工安規定必需項目"},
+    {"主工項": "大口徑集水井 (內徑 3.5m 深井)", "細項名稱": "底部封底混凝土 (3000psi)", "單位": "m³", "單價(元)": 3500, "備註": "含抗揚壓設計"},
+    {"主工項": "大口徑集水井 (內徑 3.5m 深井)", "細項名稱": "頂部格柵安全蓋板 (重型)", "單位": "座", "單價(元)": 65000, "備註": "鍍鋅鋼格柵"},
+
+    # --- 【預力地錨工程】 (全面擴充細項) ---
+    {"主工項": "預力地錨工程 (永久性 60噸)", "細項名稱": "套管鑽孔 (土壤/卵礫石/岩盤)", "單位": "m", "單價(元)": 1600, "備註": "依現地地質調整"},
+    {"主工項": "預力地錨工程 (永久性 60噸)", "細項名稱": "鋼絞線及防蝕套管組裝", "單位": "m", "單價(元)": 950, "備註": "含PE套管與防鏽油脂"},
+    {"主工項": "預力地錨工程 (永久性 60噸)", "細項名稱": "高壓水泥漿灌注", "單位": "m", "單價(元)": 450, "備註": "純水泥漿 W/C=0.45"},
+    {"主工項": "預力地錨工程 (永久性 60噸)", "細項名稱": "錨頭組件 (錨具、夾片、承壓鋼墊板)", "單位": "組", "單價(元)": 8500, "備註": "含防蝕罩"},
+    {"主工項": "預力地錨工程 (永久性 60噸)", "細項名稱": "地錨張拉、鎖定及試驗", "單位": "孔", "單價(元)": 5500, "備註": "含潛變試驗與驗收"},
+    {"主工項": "預力地錨工程 (永久性 60噸)", "細項名稱": "地錨荷重計 (Load Cell) 監測安裝", "單位": "組", "單價(元)": 35000, "備註": "長期監測用(選配)"},
+
+    # --- 【抗滑樁工程】 (全面擴充細項) ---
+    {"主工項": "抗滑樁工程 (全套管機 內徑 Ø1.5m)", "細項名稱": "全套管機具鑽掘及拔管", "單位": "m", "單價(元)": 9500, "備註": "不含遇岩盤加價"},
+    {"主工項": "抗滑樁工程 (全套管機 內徑 Ø1.5m)", "細項名稱": "超音波完整性檢測 (Koden test)", "單位": "孔", "單價(元)": 12000, "備註": "確認鑽孔垂直度"},
+    {"主工項": "抗滑樁工程 (全套管機 內徑 Ø1.5m)", "細項名稱": "鋼筋籠組立、吊放與續接", "單位": "噸", "單價(元)": 38000, "備註": "含銲接或續接器"},
+    {"主工項": "抗滑樁工程 (全套管機 內徑 Ø1.5m)", "細項名稱": "特密管水中混凝土澆置", "單位": "m³", "單價(元)": 3500, "備註": "坍度較大之混凝土"},
+    {"主工項": "抗滑樁工程 (全套管機 內徑 Ø1.5m)", "細項名稱": "劣質土與泥水沉澱外運處理", "單位": "m³", "單價(元)": 1800, "備註": "含環保處理費"},
+
+    # --- 【擋土牆工程】 (全面擴充細項) ---
+    {"主工項": "懸臂式 RC擋土牆 (H=4.0m)", "細項名稱": "基礎開挖與夯實", "單位": "m³", "單價(元)": 350, "備註": "含排水處理"},
+    {"主工項": "懸臂式 RC擋土牆 (H=4.0m)", "細項名稱": "基礎墊層PC (厚10cm)", "單位": "m²", "單價(元)": 350, "備註": "140kgf/cm²"},
+    {"主工項": "懸臂式 RC擋土牆 (H=4.0m)", "細項名稱": "鋼筋組立 (含基礎與牆身)", "單位": "噸", "單價(元)": 32000, "備註": "含加工及綁紮"},
+    {"主工項": "懸臂式 RC擋土牆 (H=4.0m)", "細項名稱": "清水模板組立及拆除", "單位": "m²", "單價(元)": 850, "備註": "牆面及基礎"},
+    {"主工項": "懸臂式 RC擋土牆 (H=4.0m)", "細項名稱": "混凝土澆置 (210kgf/cm²)", "單位": "m³", "單價(元)": 2800, "備註": "含搗實及養護"},
+    {"主工項": "懸臂式 RC擋土牆 (H=4.0m)", "細項名稱": "牆背級配透水回填及排水管", "單位": "m", "單價(元)": 1200, "備註": "防止水壓累積"},
+    {"主工項": "懸臂式 RC擋土牆 (H=4.0m)", "細項名稱": "伸縮縫及止水帶設置", "單位": "m", "單價(元)": 450, "備註": "每隔一定距離設置"},
+
+    # --- 【防落石網與坡面工程】 (全面擴充細項) ---
+    {"主工項": "高強度防落石網 (被動式 1000kJ)", "細項名稱": "端部與中間基座微型樁", "單位": "支", "單價(元)": 15000, "備註": "含鑽孔灌漿固定"},
+    {"主工項": "高強度防落石網 (被動式 1000kJ)", "細項名稱": "高強度鋼柱及緩衝鋼纜", "單位": "組", "單價(元)": 85000, "備註": "吸收落石能量"},
+    {"主工項": "高強度防落石網 (被動式 1000kJ)", "細項名稱": "攔截主網與牽引索組立", "單位": "m", "單價(元)": 45000, "備註": "依攔截長度計價"},
+    
+    {"主工項": "常規集水管 (一般規格)", "細項名稱": "PVC透水管 (內徑 Ø50mm)", "單位": "m", "單價(元)": 850, "備註": "含鑽孔"},
+    {"主工項": "常規集水管 (一般規格)", "細項名稱": "HDPE波紋管 (內徑 Ø150mm)", "單位": "m", "單價(元)": 1800, "備註": "含鑽孔"},
+    
+    {"主工項": "假設與雜項工程", "細項名稱": "施工臨時便道 (山區土方開挖與夯實)", "單位": "m", "單價(元)": 1500, "備註": "依便道長度計價"},
+    {"主工項": "假設與雜項工程", "細項名稱": "土方合法外運棄置 (B1/B2)", "單位": "m³", "單價(元)": 850, "備註": "含棄土證明"}
+]
+
+# 讀取共用資料庫 (若無則建立預設)
+def load_db():
+    if os.path.exists(DB_FILE):
+        df = pd.read_csv(DB_FILE)
+        df['單價(元)'] = df['單價(元)'].astype(int)
+        return df
+    else:
+        df = pd.DataFrame(DEFAULT_DB)
+        df.to_csv(DB_FILE, index=False, encoding='utf-8-sig')
+        return df
+
+# 儲存共用資料庫
+def save_db(df):
+    df.to_csv(DB_FILE, index=False, encoding='utf-8-sig')
+
+# 讀取共用歷史紀錄
+def load_history():
+    if os.path.exists(HISTORY_FILE):
+        # 因為欄位中包含字典清單(字串化)，讀取後需處理，這裡我們改用 pandas 的 json 序列化
+        return pd.read_json(HISTORY_FILE, orient='records', lines=True).to_dict('records') if os.path.getsize(HISTORY_FILE) > 0 else []
+    else:
+        return []
+
+# 儲存共用歷史紀錄
+def save_history(history_list):
+    if history_list:
+        pd.DataFrame(history_list).to_json(HISTORY_FILE, orient='records', lines=True, force_ascii=False)
+    else:
+        if os.path.exists(HISTORY_FILE):
+            os.remove(HISTORY_FILE)
+
+# 載入資料至 session state (確保頁面刷新時從檔案抓最新資料)
 if 'cost_db' not in st.session_state:
-    st.session_state['cost_db'] = pd.DataFrame([
-        # --- 【擋土牆工程】 ---
-        {"主工項": "擋土牆工程 (懸臂式 RC擋土牆)", "細項名稱": "H=2.0m 懸臂式RC擋土牆", "單位": "m", "單價(元)": 15000, "備註": "含開挖、模板、鋼筋、混凝土及回填"},
-        {"主工項": "擋土牆工程 (懸臂式 RC擋土牆)", "細項名稱": "H=3.0m 懸臂式RC擋土牆", "單位": "m", "單價(元)": 28000, "備註": "含開挖、模板、鋼筋、混凝土及回填"},
-        {"主工項": "擋土牆工程 (懸臂式 RC擋土牆)", "細項名稱": "H=4.0m 懸臂式RC擋土牆", "單位": "m", "單價(元)": 42000, "備註": "含開挖、模板、鋼筋、混凝土及回填"},
-        {"主工項": "擋土牆工程 (重力式 混凝土擋土牆)", "細項名稱": "H=2.0m 重力式混凝土擋土牆", "單位": "m", "單價(元)": 12000, "備註": "含開挖、模板、無筋混凝土澆置"},
-        {"主工項": "擋土牆工程 (重力式 混凝土擋土牆)", "細項名稱": "H=3.0m 重力式混凝土擋土牆", "單位": "m", "單價(元)": 22000, "備註": "含開挖、模板、無筋混凝土澆置"},
-        {"主工項": "擋土牆工程 (加勁擋土牆)", "細項名稱": "加勁擋土牆 (含網及回填)", "單位": "m²", "單價(元)": 4500, "備註": "立面面積計價，含地工網、級配回填壓實"},
-        
-        # --- 【防落石與坡面防護工程】 ---
-        {"主工項": "防落石與坡面防護工程", "細項名稱": "高強度防落石網 (被動式, 500kJ)", "單位": "m", "單價(元)": 25000, "備註": "含鋼柱、基座、緩衝繩"},
-        {"主工項": "防落石與坡面防護工程", "細項名稱": "坡面覆蓋防落石網 (主動式, 菱形網+岩栓)", "單位": "m²", "單價(元)": 1200, "備註": "含短岩栓與鍍鋅網"},
-        {"主工項": "防落石與坡面防護工程", "細項名稱": "噴凝土護坡 (厚度 10cm)", "單位": "m²", "單價(元)": 850, "備註": "含點焊鋼絲網及配比噴槍澆置"},
-        
-        # --- 【集水井工程 (不同尺寸)】 ---
-        {"主工項": "集水井工程 (含開挖與RC構造)", "細項名稱": "中型集水井 (內徑 1.0m x 1.0m)", "單位": "座", "單價(元)": 18000, "備註": "含格柵蓋板及底部跌水"},
-        {"主工項": "大口徑集水井 (深井工法)", "細項名稱": "內徑 3.5m 鋼襯鐵/RC大口徑集水井", "單位": "m", "單價(元)": 85000, "備註": "依深度計價，含局限開挖、環片"},
-        {"主工項": "大口徑集水井 (深井工法)", "細項名稱": "內徑 4.5m 鋼襯鐵/RC大口徑集水井", "單位": "m", "單價(元)": 115000, "備註": "依深度計價，含局限開挖、環片"},
-        {"主工項": "大口徑集水井 (深井工法)", "細項名稱": "井內不鏽鋼爬梯 (含防墜設施)", "單位": "m", "單價(元)": 3500, "備註": "SUS304"},
-        {"主工項": "大口徑集水井 (深井工法)", "細項名稱": "底部封底混凝土", "單位": "m³", "單價(元)": 3500, "備註": "3000psi"},
-        
-        # --- 【集水管與截水溝工程】 ---
-        {"主工項": "集水管與截排水工程", "細項名稱": "橫向/輻射集水管 (PVC 內徑 Ø50mm)", "單位": "m", "單價(元)": 850, "備註": "含鑽孔及管材"},
-        {"主工項": "集水管與截排水工程", "細項名稱": "橫向/輻射集水管 (HDPE 內徑 Ø150mm)", "單位": "m", "單價(元)": 1800, "備註": "含鑽孔及管材"},
-        {"主工項": "集水管與截排水工程", "細項名稱": "坡面U型截水溝 (W60cm x H60cm)", "單位": "m", "單價(元)": 2800, "備註": "現場澆置"},
-        
-        # --- 【抗滑樁與地錨工程】 ---
-        {"主工項": "抗滑樁工程", "細項名稱": "抗滑樁 (全套管機鑽掘 內徑 Ø1.0m)", "單位": "m", "單價(元)": 6500, "備註": "僅鑽掘工資"},
-        {"主工項": "抗滑樁工程", "細項名稱": "抗滑樁鋼筋籠組立", "單位": "噸", "單價(元)": 38000, "備註": "含材料與組立"},
-        {"主工項": "預力地錨工程", "細項名稱": "預力地錨 (永久性, 30噸)", "單位": "m", "單價(元)": 1400, "備註": "含鑽孔、鋼絞線、灌漿"},
-        {"主工項": "預力地錨工程", "細項名稱": "地錨張拉與鎖定 (含防鏽封頭)", "單位": "孔", "單價(元)": 5000, "備註": "單孔計價"}
-    ])
-    st.session_state['cost_db']['單價(元)'] = st.session_state['cost_db']['單價(元)'].astype(int)
-
+    st.session_state['cost_db'] = load_db()
 if 'history' not in st.session_state:
-    st.session_state['history'] = []
+    st.session_state['history'] = load_history()
 
-# 自訂 CSS
+# ==========================================
+# 介面設計開始
+# ==========================================
 st.markdown("""
     <style>
         .block-container { padding-top: 2rem; padding-bottom: 2rem; }
@@ -63,36 +118,40 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-st.title("⛰️ 大地工程經費初估與資料庫")
+st.title("⛰️ 大地工程經費初估與雲端共享資料庫")
 
 with st.sidebar:
     st.header("功能導覽")
-    tab = st.radio("", ["📊 專案經費初估", "📚 單價資料庫管理", "📁 歷史估算紀錄"])
+    tab = st.radio("", ["📊 專案經費初估", "📚 共享單價資料庫管理", "📁 共享歷史估算紀錄"])
     st.markdown("---")
-    st.info("💡 **單價更新說明**\n\nPCCES 單價無法自動即時抓取，請利用「資料庫管理」的 CSV 匯入功能進行整批單價更新。")
+    st.info("💡 **多人協作雲端版**\n\n本系統所有單價與歷史紀錄皆已連動至**雲端/伺服器實體檔案**。所有人在此新增的工項、更新的單價與儲存的專案，其他同仁都能同步共用！")
+    if st.button("🔄 強制同步最新資料庫", use_container_width=True):
+        st.session_state['cost_db'] = load_db()
+        st.session_state['history'] = load_history()
+        st.rerun()
 
 # ==========================================
 # TAB 1: 專案經費初估
 # ==========================================
 if tab == "📊 專案經費初估":
+    # 確保使用最新資料庫
+    db = load_db()
     
     st.subheader("1. 專案名稱與工程項目設定")
     project_name = st.text_input("專案名稱", "某坡地穩定與水保改善工程")
     
-    db = st.session_state['cost_db']
     all_major_items = db['主工項'].unique().tolist()
-    
     selected_majors = st.multiselect(
         "請選擇本次工程涵蓋的主項目 (可複選)：", 
         options=all_major_items,
-        placeholder="點擊此處展開清單..."
+        placeholder="點擊展開，例如：大口徑集水井、抗滑樁..."
     )
     
     selected_details = []
     
     if selected_majors:
         st.markdown("#### 📝 細項數量與單價設定")
-        st.caption("請填寫數量。參考價與小計皆已統一對齊，若需微調單價請修改「自訂單價」。")
+        st.caption("請填寫數量。參考價已精準對齊，若需微調單價請修改「自訂單價」。")
         
         for major in selected_majors:
             with st.expander(f"📂 {major}", expanded=True):
@@ -109,17 +168,14 @@ if tab == "📊 專案經費初估":
                     
                     with c_qty:
                         qty = st.number_input(f"數量 ({unit})", value=0.0, step=10.0, key=f"qty_{major}_{idx}")
-                    
                     with c_ref:
                         st.markdown(f"<div class='align-text'>參考價：<span class='price-text'>NT$ {default_price:,}</span></div>", unsafe_allow_html=True)
-                        
                     with c_custom:
                         custom_val = st.text_input(f"自訂單價(可選)", value=str(default_price), key=f"prc_{major}_{idx}")
                         try:
                             prc = int(custom_val.replace(',', ''))
                         except ValueError:
                             prc = default_price
-                            
                     with c_total:
                         subtotal = int(qty * prc)
                         st.markdown(f"<div class='align-text'>小計：<span class='total-text'>NT$ {subtotal:,}</span></div>", unsafe_allow_html=True)
@@ -149,7 +205,6 @@ if tab == "📊 專案經費初估":
     st.markdown("---")
     
     st.subheader("📊 3. 估算結果分析與明細")
-    
     if len(selected_details) > 0:
         df_selected = pd.DataFrame(selected_details)
         direct_cost = df_selected['複價'].sum()
@@ -172,15 +227,7 @@ if tab == "📊 專案經費初估":
         
         with res_col1:
             st.write("##### 📝 直接工程費完整明細")
-            st.dataframe(
-                df_selected.style.format({
-                    "數量": "{:,.1f}", 
-                    "單價(元)": "{:,.0f}", 
-                    "複價": "{:,.0f}"
-                }), 
-                use_container_width=True, 
-                hide_index=True
-            )
+            st.dataframe(df_selected.style.format({"數量": "{:,.1f}", "單價(元)": "{:,.0f}", "複價": "{:,.0f}"}), use_container_width=True, hide_index=True)
             
             st.write("##### 📊 經費結構摘要")
             summary_table = pd.DataFrame({
@@ -205,8 +252,9 @@ if tab == "📊 專案經費初估":
             st.altair_chart(chart, use_container_width=True)
             
             st.markdown("<br>", unsafe_allow_html=True)
-            if st.button("💾 儲存專案至歷史紀錄", type="primary", use_container_width=True):
-                # ★ 升級：連同明細資料表 (df_selected) 一起存入歷史紀錄
+            if st.button("💾 將專案發佈至共享歷史紀錄", type="primary", use_container_width=True):
+                # 重新讀取最新的歷史紀錄，避免蓋掉別人剛存的
+                current_history = load_history()
                 record = {
                     "專案名稱": project_name,
                     "直接工程費": direct_cost,
@@ -214,42 +262,45 @@ if tab == "📊 專案經費初估":
                     "管理費": management_cost,
                     "營業稅": tax_cost,
                     "總經費": total_cost,
-                    "時間": pd.Timestamp.now().strftime("%Y-%m-%d %H:%M"),
-                    "細項明細": df_selected.to_dict('records') # 將 DataFrame 轉為字典清單儲存
+                    "時間": pd.Timestamp.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    "細項明細": df_selected.to_dict('records')
                 }
-                st.session_state['history'].append(record)
-                st.success("儲存成功！請至「歷史估算紀錄」查看包含所有細項的完整報表。")
+                current_history.append(record)
+                save_history(current_history) # 寫入實體檔案
+                st.session_state['history'] = current_history
+                st.success("儲存成功！所有同仁皆可於「共享歷史估算紀錄」查看此專案。")
     else:
-        st.info("👈 請先於上方區塊勾選工項並填寫大於 0 的數量，系統將於此處生成完整明細與分析圖表。")
+        st.info("👈 請先於上方區塊勾選工項並填寫大於 0 的數量。")
 
 # ==========================================
-# TAB 2: 單價資料庫管理
+# TAB 2: 共享單價資料庫管理
 # ==========================================
-elif tab == "📚 單價資料庫管理":
-    st.header("📚 單價資料庫與 PCCES 批次更新")
+elif tab == "📚 共享單價資料庫管理":
+    st.header("📚 共享單價資料庫管理")
     
-    db = st.session_state['cost_db']
+    db = load_db()
     
     c_dl, c_up = st.columns([1, 1], gap="large")
     with c_dl:
-        st.markdown("#### ⬇️ 步驟 1: 下載目前資料庫")
-        st.caption("匯出 CSV，交由估算人員比對最新 PCCES 行情並修改單價。")
+        st.markdown("#### ⬇️ 步驟 1: 下載目前共用資料庫")
+        st.caption("任何人下載修改後重新上傳，將覆蓋所有人的資料庫。")
         csv_db = db.to_csv(index=False).encode('utf-8-sig')
-        st.download_button("📥 下載 CSV 模板", data=csv_db, file_name="geotech_database.csv", mime="text/csv")
+        st.download_button("📥 下載 CSV 模板", data=csv_db, file_name="geotech_database_shared.csv", mime="text/csv")
     
     with c_up:
         st.markdown("#### ⬆️ 步驟 2: 匯入最新單價表")
-        st.caption("上傳修改完成的 CSV，系統將自動覆蓋更新單價。")
+        st.caption("上傳後，所有同仁的選單將立即更新為最新單價。")
         uploaded_file = st.file_uploader("上傳更新後的 CSV 檔案", type=["csv"], label_visibility="collapsed")
         if uploaded_file is not None:
             try:
                 new_db = pd.read_csv(uploaded_file)
                 if set(['主工項', '細項名稱', '單位', '單價(元)']).issubset(new_db.columns):
+                    save_db(new_db) # 寫入實體檔案
                     st.session_state['cost_db'] = new_db
-                    st.success("✅ 資料庫更新成功！")
+                    st.success("✅ 共用資料庫已全面更新！")
                     st.rerun()
                 else:
-                    st.error("欄位格式錯誤，請確認 CSV 包含：主工項, 細項名稱, 單位, 單價(元)")
+                    st.error("欄位格式錯誤！")
             except Exception as e:
                 st.error(f"檔案讀取失敗: {e}")
 
@@ -260,7 +311,7 @@ elif tab == "📚 單價資料庫管理":
     display_db = db[db['主工項'].str.contains(search_query, case=False) | db['細項名稱'].str.contains(search_query, case=False)] if search_query else db
     st.dataframe(display_db.style.format({"單價(元)": "{:,.0f}"}), use_container_width=True, hide_index=True)
     
-    with st.expander("➕ 人工單筆新增細項規格"):
+    with st.expander("➕ 人工單筆新增細項規格 (立即同步)"):
         with st.form("add_form"):
             c1, c2 = st.columns(2)
             with c1:
@@ -276,29 +327,31 @@ elif tab == "📚 單價資料庫管理":
                     parsed_price = int(new_price.replace(',', ''))
                     if new_major and new_sub:
                         new_row = pd.DataFrame([{"主工項": new_major, "細項名稱": new_sub, "單位": new_unit, "單價(元)": parsed_price, "備註": new_note}])
-                        st.session_state['cost_db'] = pd.concat([db, new_row], ignore_index=True)
-                        st.success("新增成功！")
+                        current_db = load_db()
+                        updated_db = pd.concat([current_db, new_row], ignore_index=True)
+                        save_db(updated_db) # 寫入實體檔案
+                        st.session_state['cost_db'] = updated_db
+                        st.success("新增成功！其他同仁重新整理網頁即可看到。")
                         st.rerun()
                 except ValueError:
                     st.error("單價請輸入有效數字！")
 
 # ==========================================
-# TAB 3: 歷史估算紀錄 (全面升級版)
+# TAB 3: 共享歷史估算紀錄
 # ==========================================
-elif tab == "📁 歷史估算紀錄":
-    st.header("📁 歷史估算紀錄與匯出")
-    st.markdown("點擊專案卡片即可檢視該專案的**所有工程細項、數量與單價明細**。")
+elif tab == "📁 共享歷史估算紀錄":
+    st.header("📁 共享歷史估算紀錄與匯出")
+    st.markdown("這裡是**團隊共用**的專案資料庫。點擊專案卡片可檢視所有人儲存的詳細工程與預算明細。")
     
-    if len(st.session_state['history']) > 0:
-        
-        # 建立匯出所有明細的超級大表
+    history_data = load_history()
+    
+    if len(history_data) > 0:
         all_export_data = []
         
-        for idx, record in enumerate(st.session_state['history']):
-            # ★ 升級：使用 expander 將每個專案做成卡片，點開可看明細
+        # 反轉順序，讓最新的專案顯示在最上面
+        for record in reversed(history_data):
             with st.expander(f"📌 [{record['時間']}] {record['專案名稱']} ─ 總經費: NT$ {record['總經費']:,}"):
                 
-                # 顯示該專案的總表摘要
                 st.markdown("##### 📊 專案費用總結")
                 summary_cols = st.columns(5)
                 summary_cols[0].metric("直接工程費", f"NT$ {record['直接工程費']:,}")
@@ -307,21 +360,14 @@ elif tab == "📁 歷史估算紀錄":
                 summary_cols[3].metric("營業稅", f"NT$ {record['營業稅']:,}")
                 summary_cols[4].metric("總經費", f"NT$ {record['總經費']:,}")
                 
-                # 顯示該專案儲存的細項明細
                 st.markdown("##### 📝 專案工程細項明細")
                 if "細項明細" in record and record["細項明細"]:
                     detail_df = pd.DataFrame(record["細項明細"])
                     st.dataframe(
-                        detail_df.style.format({
-                            "數量": "{:,.1f}", 
-                            "單價(元)": "{:,.0f}", 
-                            "複價": "{:,.0f}"
-                        }),
-                        use_container_width=True,
-                        hide_index=True
+                        detail_df.style.format({"數量": "{:,.1f}", "單價(元)": "{:,.0f}", "複價": "{:,.0f}"}),
+                        use_container_width=True, hide_index=True
                     )
                     
-                    # 準備匯出資料（加上專案名稱作為識別）
                     for row in record["細項明細"]:
                         row_export = row.copy()
                         row_export['專案名稱'] = record['專案名稱']
@@ -335,26 +381,23 @@ elif tab == "📁 歷史估算紀錄":
         col_btn1, col_btn2, col_btn3 = st.columns([1, 1, 1])
         
         with col_btn1:
-            # 匯出只有總表的 CSV
-            history_summary_df = pd.DataFrame(st.session_state['history']).drop(columns=['細項明細'], errors='ignore')
+            history_summary_df = pd.DataFrame(history_data).drop(columns=['細項明細'], errors='ignore')
             csv_summary = history_summary_df.to_csv(index=False).encode('utf-8-sig')
             st.download_button("📥 下載歷史紀錄 (僅總表 CSV)", data=csv_summary, file_name="history_summary.csv", mime="text/csv", use_container_width=True)
             
         with col_btn2:
-            # 匯出包含所有專案、所有細項的大表 CSV
             if all_export_data:
                 export_df = pd.DataFrame(all_export_data)
-                # 重新排列欄位，讓專案名稱與時間在最前面
                 cols = ['專案名稱', '估算時間'] + [c for c in export_df.columns if c not in ['專案名稱', '估算時間']]
                 export_df = export_df[cols]
-                
                 csv_details = export_df.to_csv(index=False).encode('utf-8-sig')
                 st.download_button("📥 下載歷史紀錄 (含所有細項明細 CSV)", data=csv_details, file_name="history_full_details.csv", mime="text/csv", use_container_width=True)
         
         with col_btn3:
-            if st.button("🗑️️ 清空所有歷史紀錄", use_container_width=True):
+            if st.button("🗑 清空所有團隊紀錄 (危險操作)", use_container_width=True):
+                save_history([]) # 清空實體檔案
                 st.session_state['history'] = []
                 st.rerun()
                 
     else:
-        st.info("目前尚無歷史估算紀錄。請先於「專案經費初估」頁面儲存專案。")
+        st.info("目前尚無團隊估算紀錄。")
