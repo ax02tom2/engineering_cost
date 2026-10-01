@@ -184,7 +184,7 @@ with st.sidebar:
     st.markdown("---")
     
     st.markdown("#### 🔄 強制同步最新資料庫")
-    st.caption("使用時機：若其他同事剛剛更新了單價或新增了估算紀錄，點擊此按鈕即可抓取伺服器上最新的資料。")
+    st.caption("點擊此按鈕即可抓取伺服器上最新的資料。")
     if st.button("立即同步更新", use_container_width=True):
         st.session_state['cost_db'] = load_db()
         st.session_state['history'] = load_history()
@@ -327,7 +327,7 @@ if tab == "📊 專案經費初估":
                 current_history.append(record)
                 save_history(current_history)
                 st.session_state['history'] = current_history
-                st.success("儲存成功！所有同仁皆可於「共享歷史估算紀錄」查看此專案。")
+                st.success("儲存成功！可於「共享歷史估算紀錄」查看此專案。")
     else:
         st.info("👈 請先於上方區塊勾選工項並填寫大於 0 的數量。")
 
